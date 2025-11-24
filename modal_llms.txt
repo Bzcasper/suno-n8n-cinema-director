@@ -457,7 +457,7 @@ username to create a Modal [Secret](https://modal.com/docs/guide/secrets).
 
 ```
 REGISTRY_USERNAME=my-dockerhub-username
-REGISTRY_PASSWORD=dckr_pat_TS012345aaa67890bbbb1234ccc
+REGISTRY_PASSWORD=your_docker_token_here
 ```
 
 Use this Secret with the
