@@ -40,11 +40,11 @@ Environment template (.env.template)
 
 
 🔄 How It Works
-1. You create song on Suno → 
-2. Tampermonkey captures it automatically → 
-3. Sends to n8n webhook → 
-4. n8n downloads audio + cover → 
-5. Modal Labs generates video (1-5 min) → 
+1. You create song on Suno →
+2. Tampermonkey captures it automatically →
+3. Sends to n8n webhook →
+4. n8n downloads audio + cover →
+5. Modal Labs generates video (1-5 min) →
 6. n8n organizes in Drive: Suno/2025-01/electronic/
    ├── song_name.mp4 (YouTube-ready video)
    ├── song_name.mp3 (audio)
