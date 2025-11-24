@@ -21,10 +21,10 @@
     // PRODUCTION CONFIGURATION
     // ============================================================
     const CONFIG = {
-        WEBHOOK_URL: "https://trap--suno-video-factory-v3-1-n8n-webhook.modal.run",
+        WEBHOOK_URL: "https://n8n-gszggfatjq-uc.a.run.app/webhook/suno-trigger",
         MAX_RETRIES: 3,
         RETRY_DELAY_BASE: 1000,
-        TIMEOUT: 3600000, // 1 hour for video generation
+        TIMEOUT: 15000,
         BATCH_DELAY: 2000, // Delay between batch sends
         HEALTH_CHECK_INTERVAL: 300000, // 5 minutes
         MAX_QUEUE_SIZE: 50
@@ -223,21 +223,10 @@
                 headers: { "Content-Type": "application/json" },
                 data: JSON.stringify(data),
                 timeout: CONFIG.TIMEOUT,
-                responseType: 'blob', // Handle binary video response
 
                 onload: (res) => {
                     if (res.status >= 200 && res.status < 300) {
-                        // Success - handle video file download
-                        const blob = res.response;
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `${data.title.replace(/[^a-z0-9]/gi, '_')}.mp4`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-
+                        // Success
                         sentIds[data.id] = {
                             timestamp: new Date().toISOString(),
                             title: data.title
@@ -247,7 +236,7 @@
                         stats.total_sent++;
                         saveStats();
 
-                        Logger.success(`✓ Downloaded video: ${data.title}`);
+                        Logger.success(`✓ ${data.title}`);
 
                         // Remove from failed queue if present
                         failedQueue = failedQueue.filter(item => item.id !== data.id);
