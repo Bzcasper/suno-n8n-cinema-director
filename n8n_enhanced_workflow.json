@@ -1,0 +1,105 @@
+{
+  "name": "Suno v3.1 - Cinema Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "suno-trigger",
+        "options": {}
+      },
+      "name": "Suno Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://trap--suno-video-factory-v3-1-n8n-webhook.modal.run",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "audio_url",
+              "value": "={{ $json.body.audio_url }}"
+            },
+            {
+              "name": "title",
+              "value": "={{ $json.body.title }}"
+            },
+            {
+              "name": "tags",
+              "value": "={{ $json.body.tags }}"
+            },
+            {
+              "name": "video_id",
+              "value": "={{ $json.body.id }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "video_file"
+            }
+          },
+          "timeout": 3600000
+        }
+      },
+      "name": "Generate Cinema Video (A100)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [250, 0],
+      "notes": "Timeout set to 1 hour for rendering"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "upload",
+        "fileContent": "video_file",
+        "name": "={{ $json.body.title }}_v3.mp4",
+        "parents": [
+          "YOUR_GOOGLE_DRIVE_FOLDER_ID"
+        ],
+        "options": {}
+      },
+      "name": "Upload to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [500, 0]
+    }
+  ],
+  "connections": {
+    "Suno Webhook": {
+      "main": [
+        [
+          {
+            "node": "Generate Cinema Video (A100)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Cinema Video (A100)": {
+      "main": [
+        [
+          {
+            "node": "Upload to Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
