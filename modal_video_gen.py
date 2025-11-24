@@ -62,12 +62,9 @@ image = (
     secrets=[modal.Secret.from_name("suno-video-secrets")],
 )
 class VideoFactory:
-    def __init__(self):
-        # <--- FIXED: Set device immediately on instantiation
-        self.device = "cuda"
-
     def enter(self):
         """Zero-Latency Bootstrap: Load all 3 models into VRAM"""
+        self.device = "cuda"  # Set device here
         print("[BOOT] Initializing Factory...")
         import torch
         from diffusers.pipelines.flux.pipeline_flux import FluxPipeline
