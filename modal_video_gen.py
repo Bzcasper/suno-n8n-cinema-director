@@ -1,5 +1,5 @@
 """
-Suno Video Factory v3.1 - "The Cinema Director"
+Suno Video Factory v3.2 - "The Cinema Director" (Hotfix)
 Architecture: A100-80GB Single-Container | Flux.1 [dev] | CogVideoX-5B | Llama 3.1
 Integration: FastAPI Webhook for n8n
 """
@@ -7,14 +7,15 @@ Integration: FastAPI Webhook for n8n
 import modal
 import os
 import json
-from pathlib import Path
+import requests
+from fastapi import Response  # <--- FIXED: Import Response from FastAPI
 
 # ==============================================================================
 # 📦 CONFIGURATION & VOLUMES
 # ==============================================================================
-app = modal.App("suno-video-factory-v3-1")
+app = modal.App("suno-video-factory-v3-2")
 
-# Shared volumes for model caching (saves ~100GB download time on cold boot)
+# Shared volumes for model caching
 model_volume = modal.Volume.from_name("suno-model-cache", create_if_missing=True)
 asset_volume = modal.Volume.from_name("suno-asset-cache", create_if_missing=True)
 
@@ -29,16 +30,6 @@ CRITICAL RULES:
 2. **Cinematography**: Use professional camera terms (e.g., "low angle", "85mm lens", "volumetric lighting", "bokeh").
 3. **Motion**: For each scene, specify a MOTION prompt optimized for AI video generators. Use keywords: "slow pan", "zoom in", "static camera", "tracking shot".
 4. **Format**: Output ONLY a valid JSON array.
-
-Example Output Structure:
-[
-  {
-    "start": 0.0,
-    "end": 4.0,
-    "visual_prompt": "Cyberpunk style. A young woman with neon blue hair standing in rain, looking at a hologram. 85mm lens, depth of field, neon lights reflecting on wet pavement. High detail, 8k.",
-    "motion_prompt": "The camera slowly zooms in on the woman's face. Smooth motion."
-  }
-]
 """
 
 # ==============================================================================
@@ -48,7 +39,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("ffmpeg", "git")
     .pip_install(
-        "fastapi[standard]",  # <--- CRITICAL: Required for n8n webhook
+        "fastapi[standard]",
         "torch==2.4.0",
         "diffusers==0.30.0",
         "transformers==4.44.0",
@@ -65,14 +56,19 @@ image = (
 
 @app.cls(
     image=image,
-    gpu="A100-80GB",  # CRITICAL: 40GB cards will OOM with Flux+CogVideo+Llama
-    timeout=3600,  # 1 Hour Max for long songs
+    gpu="A100-80GB",
+    timeout=3600,
     volumes={"/root/models": model_volume, "/tmp/assets": asset_volume},
     secrets=[modal.Secret.from_name("suno-video-secrets")],
 )
 class VideoFactory:
+    def __init__(self):
+        # <--- FIXED: Set device immediately on instantiation
+        self.device = "cuda"
+
     def enter(self):
         """Zero-Latency Bootstrap: Load all 3 models into VRAM"""
+        print("[BOOT] Initializing Factory...")
         import torch
         from diffusers.pipelines.flux.pipeline_flux import FluxPipeline
         from diffusers.pipelines.cogvideo.pipeline_cogvideox_image2video import (
@@ -80,10 +76,9 @@ class VideoFactory:
         )
         from transformers import AutoTokenizer, AutoModelForCausalLM
 
-        self.device = "cuda"
         torch.backends.cuda.matmul.allow_tf32 = True
 
-        # 1. Load Director (Llama 3.1 8B) - 4-bit Quantized
+        # 1. Load Director (Llama 3.1 8B)
         print("[BOOT] Loading Director (Llama 3.1)...")
         self.tokenizer = AutoTokenizer.from_pretrained(
             "meta-llama/Meta-Llama-3.1-8B-Instruct",
@@ -98,7 +93,7 @@ class VideoFactory:
             cache_dir="/root/models",
         )
 
-        # 2. Load Artist (Flux.1 Dev) - BFloat16
+        # 2. Load Artist (Flux.1 Dev)
         print("[BOOT] Loading Artist (Flux.1 [dev])...")
         self.artist = FluxPipeline.from_pretrained(
             "black-forest-labs/FLUX.1-dev",
@@ -108,7 +103,7 @@ class VideoFactory:
         ).to(self.device)
         self.artist.enable_model_cpu_offload()
 
-        # 3. Load Animator (CogVideoX-5B) - BFloat16
+        # 3. Load Animator (CogVideoX-5B)
         print("[BOOT] Loading Animator (CogVideoX-5B)...")
         self.animator = CogVideoXImageToVideoPipeline.from_pretrained(
             "THUDM/CogVideoX-5b-I2V",
@@ -117,6 +112,7 @@ class VideoFactory:
             cache_dir="/root/models",
         ).to(self.device)
         self.animator.enable_model_cpu_offload()
+        print("[BOOT] Factory Ready.")
 
     def analyze_audio(self, audio_path):
         """Extracts word-level timestamps"""
@@ -124,6 +120,7 @@ class VideoFactory:
         import torch
 
         print(f"[EARS] Transcribing {audio_path}...")
+        # device is now guaranteed to exist
         model = whisperx.load_model("large-v2", self.device, compute_type="float16")
         audio = whisperx.load_audio(audio_path)
         result = model.transcribe(audio, batch_size=16)
@@ -174,26 +171,21 @@ class VideoFactory:
             return json.loads(json_str)
         except Exception as e:
             print(f"[ERROR] JSON Parse Fail: {e}")
-            return [
-                {
-                    "start": 0,
-                    "end": 5,
-                    "visual_prompt": f"Abstract art representing {title}",
-                    "motion_prompt": "Slow pan right",
-                }
-            ]
+            return []
 
     @modal.method()
     def create_music_video(self, audio_url: str, title: str, tags: str, video_id: str):
-        import requests
         from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
         from diffusers.utils.export_utils import export_to_video
 
         # 1. Download
         print(f"[START] Processing: {title}")
+        os.makedirs("/tmp/assets", exist_ok=True)
         audio_path = f"/tmp/assets/{video_id}.mp3"
-        with open(audio_path, "wb") as f:
-            f.write(requests.get(audio_url).content)
+
+        if not os.path.exists(audio_path):
+            with open(audio_path, "wb") as f:
+                f.write(requests.get(audio_url).content)
 
         # 2. Analyze
         segments = self.analyze_audio(audio_path)
@@ -210,11 +202,11 @@ class VideoFactory:
             if duration < 2:
                 continue
 
-            print(f"[SCENE {i + 1}] {scene['visual_prompt'][:50]}...")
+            print(f"[SCENE {i + 1}] {scene.get('visual_prompt', '')[:50]}...")
 
             # A. Flux
             image = self.artist(
-                prompt=scene["visual_prompt"],
+                prompt=scene.get("visual_prompt", title),
                 height=768,
                 width=1360,
                 num_inference_steps=25,
@@ -223,7 +215,7 @@ class VideoFactory:
 
             # B. CogVideoX
             frames = self.animator(
-                prompt=scene["motion_prompt"],
+                prompt=scene.get("motion_prompt", "Slow pan"),
                 image=image,
                 num_frames=49,
                 num_inference_steps=50,
@@ -243,6 +235,9 @@ class VideoFactory:
             clips.append(clip)
 
         # 5. Final Stitch
+        if not clips:
+            raise ValueError("No clips generated")
+
         print("[EDIT] Stitching master...")
         final_video = concatenate_videoclips(clips, method="compose")
         audio_track = AudioFileClip(audio_path)
@@ -266,7 +261,7 @@ class VideoFactory:
 # 🌐 N8N INTEGRATION POINT
 # ==============================================================================
 @app.function(
-    image=image,  # Uses the image with fastapi[standard]
+    image=image,
     timeout=3600,
 )
 @modal.fastapi_endpoint(method="POST")
@@ -289,7 +284,7 @@ def n8n_webhook(data: dict):
         )
 
         # Return video file directly
-        return modal.Response(
+        return Response(
             content=video_bytes,
             media_type="video/mp4",
             headers={
@@ -298,26 +293,8 @@ def n8n_webhook(data: dict):
         )
     except Exception as e:
         print(f"[ERROR] Generation failed: {e}")
-        return modal.Response(
-            content=json.dumps({"error": str(e)}).encode("utf-8"),
+        return Response(
+            content=json.dumps({"error": str(e)}),
             status_code=500,
             media_type="application/json",
         )
-
-
-# ==============================================================================
-# 🧪 LOCAL TESTING
-# ==============================================================================
-@app.local_entrypoint()
-def main():
-    print("🧪 Starting local test...")
-    factory = VideoFactory()
-    video_bytes = factory.create_music_video.remote(
-        audio_url="https://cdn1.suno.ai/example.mp3",  # Replace with real MP3 for test
-        title="Test Run v3.1",
-        tags="Synthwave, Cyberpunk",
-        video_id="test_run_v3",
-    )
-    with open("test_output_v3.mp4", "wb") as f:
-        f.write(video_bytes)
-    print("✅ Test complete! Video saved to test_output_v3.mp4")
