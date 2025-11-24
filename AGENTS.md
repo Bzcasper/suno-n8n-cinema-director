@@ -9,7 +9,7 @@
 - **Setup Modal**: `modal setup`
 
 ### Health Checks
-- **Test webhook**: `curl -X POST https://trap--suno-video-factory-v3-1-n8n-webhook.modal.run -H "Content-Type: application/json" -d '{"audio_url": "test", "title": "test", "tags": "test", "video_id": "test"}'`
+- **Test webhook**: `curl -X POST https://trap--suno-video-factory-v3-2-n8n-webhook.modal.run -H "Content-Type: application/json" -d '{"audio_url": "test", "title": "test", "tags": "test", "video_id": "test"}'`
 
 ### Single Test Execution
 - **Test video generation**: `modal run modal_video_gen.py` (uses test URLs in main function)
