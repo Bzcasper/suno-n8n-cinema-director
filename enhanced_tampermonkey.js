@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Suno-to-Modal Cinema Director (v3.1)
 // @namespace    http://tampermonkey.net/
-// @version      8.0
+// @version      9.0
 // @description  Production-ready: Enhanced logging, batch processing, health checks, and comprehensive error recovery
 // @author       Robert Casper
 // @match        https://suno.com/*
@@ -424,7 +424,118 @@
         }
 
         return response;
-    };
+     };
+
+    // ============================================================
+    // 🎛️ COMPLIANT MANUAL CONTROL HUD (Fixes "Missing ID/Name" Audit)
+    // ============================================================
+    function toggleControlPanel() {
+        const PANEL_ID = "suno_god_mode_panel";
+        const existing = document.getElementById(PANEL_ID);
+        
+        if (existing) {
+            existing.remove();
+            return;
+        }
+
+        const panel = document.createElement("div");
+        panel.id = PANEL_ID;
+        Object.assign(panel.style, {
+            position: "fixed",
+            bottom: "80px",
+            right: "24px",
+            width: "300px",
+            background: "#0a0a0a",
+            border: "1px solid #333",
+            borderRadius: "8px",
+            padding: "16px",
+            zIndex: 999990,
+            boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+            fontFamily: "Inter, sans-serif"
+        });
+
+        // HEADER
+        const header = document.createElement("h3");
+        header.innerText = "⚡ Manual Trigger";
+        header.style.color = "#fff";
+        header.style.margin = "0 0 12px 0";
+        header.style.fontSize = "14px";
+        panel.appendChild(header);
+
+        // FORM CONTAINER
+        const form = document.createElement("div");
+        
+        // INPUT: Song ID (COMPLIANT)
+        const inputGroup = document.createElement("div");
+        inputGroup.style.marginBottom = "10px";
+        
+        const label = document.createElement("label");
+        label.innerText = "Song UUID";
+        label.htmlFor = "suno_manual_id"; // Links to ID
+        label.style.display = "block";
+        label.style.color = "#888";
+        label.style.fontSize = "11px";
+        label.style.marginBottom = "4px";
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.id = "suno_manual_id";       // ✅ FIXED: Unique ID
+        input.name = "suno_manual_id";     // ✅ FIXED: Unique Name
+        input.placeholder = "e.g., a1b2c3d4-..."
+        Object.assign(input.style, {
+            width: "100%",
+            background: "#1a1a1a",
+            border: "1px solid #333",
+            color: "#fff",
+            padding: "8px",
+            borderRadius: "4px",
+            boxSizing: "border-box"
+        });
+
+        inputGroup.appendChild(label);
+        inputGroup.appendChild(input);
+        form.appendChild(inputGroup);
+
+        // ACTION BUTTON
+        const btn = document.createElement("button");
+        btn.id = "suno_trigger_btn";       // ✅ FIXED
+        btn.name = "suno_trigger_btn";     // ✅ FIXED
+        btn.innerText = "PUSH TO PIPELINE";
+        Object.assign(btn.style, {
+            width: "100%",
+            background: "#fff",
+            color: "#000",
+            border: "none",
+            padding: "8px",
+            borderRadius: "4px",
+            fontWeight: "bold",
+            cursor: "pointer",
+            marginTop: "8px"
+        });
+
+        // LOGIC
+        btn.onclick = () => {
+            const id = document.getElementById("suno_manual_id").value.trim();
+            if (!id) {
+                toast("Enter a Song ID", "warn");
+                return;
+            }
+            // Mock a clip object for the handler
+            handleClips([{
+                id: id,
+                title: "Manual Override",
+                audio_url: `https://cdn1.suno.ai/${id}.mp3`,
+                image_url: `https://cdn1.suno.ai/image_${id}.png`,
+                status: "complete",
+                metadata: { tags: "manual_trigger" }
+            }]);
+            toast(`Manually Pushed: ${id.slice(0,8)}...`, "success");
+        };
+
+        form.appendChild(btn);
+        panel.appendChild(form);
+        document.body.appendChild(panel);
+    }
 
     // ============================================================
     // MENU COMMANDS
@@ -465,6 +576,8 @@
         URL.revokeObjectURL(url);
         toast("Failed queue exported", "success");
     });
+
+    GM_registerMenuCommand("🎛️ Toggle Control Panel", toggleControlPanel);
 
     // ============================================================
     // INITIALIZATION
