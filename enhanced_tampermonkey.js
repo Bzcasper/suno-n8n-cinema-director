@@ -1,15 +1,14 @@
 // ==UserScript==
-// @name         Suno-to-n8n Bridge (Production v7.2 - Sequential Flow)
+// @name         Suno-to-n8n Bridge (God Mode v7.1 - FIXED Double Nesting)
 // @namespace    http://tampermonkey.net/
-// @version      7.2
-// @description  Production-ready: Enhanced logging, batch processing, health checks, and comprehensive error recovery
-// @author       Robert Casper
+// @version      7.1
+// @description  CRITICAL FIX: Removed double body nesting, sends flat structure to n8n
+// @author       Robert Casper (Fixed by Expert Software Development Assistant)
 // @match        https://suno.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
-// @grant        GM_notification
 // @grant        unsafeWindow
 // @run-at       document-start
 // ==/UserScript==
@@ -18,77 +17,35 @@
     "use strict";
 
     // ============================================================
-    // PRODUCTION CONFIGURATION (v7.2 Sequential Flow)
+    // CONFIGURATION
     // ============================================================
-    const CONFIG = {
-        // MUST BE YOUR N8N WEBHOOK URL
-        WEBHOOK_URL: "https://n8n-gszggfatjq-uc.a.run.app/webhook/suno-trigger",
-        MAX_RETRIES: 3,
-        RETRY_DELAY_BASE: 1000,
-        TIMEOUT: 15000,
+    const WEBHOOK_URL = "https://n8n-gszggfatjq-uc.a.run.app/webhook/suno-trigger";
+    const MAX_RETRIES = 3;
+    const SENT_IDS_KEY = "suno_sent_ids_v7";
+    const DEBUG_MODE = true;
 
-        // REVERTED: n8n handles the sequential pacing based on completion time.
-        BATCH_DELAY: 2000,
-
-        // Health check interval reverted to default (5 minutes)
-        HEALTH_CHECK_INTERVAL: 300000,
-
-        MAX_QUEUE_SIZE: 50
-    };
-
-    const STORAGE_KEYS = {
-        SENT_IDS: "suno_sent_ids_v7",
-        FAILED_QUEUE: "suno_failed_queue_v7",
-        STATS: "suno_stats_v7",
-        LAST_HEALTH_CHECK: "suno_last_health_v7"
-    };
+    let sentIds = GM_getValue(SENT_IDS_KEY, {});
 
     // ============================================================
-    // STATE MANAGEMENT
+    // DEBUG LOGGER
     // ============================================================
-    let sentIds = GM_getValue(STORAGE_KEYS.SENT_IDS, {});
-    let failedQueue = GM_getValue(STORAGE_KEYS.FAILED_QUEUE, []);
-    let stats = GM_getValue(STORAGE_KEYS.STATS, {
-        total_sent: 0,
-        total_failed: 0,
-        last_sync: null,
-        uptime_start: new Date().toISOString()
-    });
+    function log(msg, level = "info") {
+        if (!DEBUG_MODE && level === "debug") return;
+
+        const prefix = "[Suno Bridge v7.1]";
+        const styles = {
+            info: "color: #00eaff",
+            success: "color: #00ff40",
+            error: "color: #ff003c",
+            warn: "color: #ffcc00",
+            debug: "color: #888888"
+        };
+
+        console.log(`%c${prefix} ${msg}`, styles[level] || styles.info);
+    }
 
     // ============================================================
-    // ENHANCED LOGGING SYSTEM
-    // ============================================================
-    const Logger = {
-        prefix: "[Suno Bridge v7]",
-        
-        info: (msg, data = null) => {
-            console.log(`${Logger.prefix} ℹ️  ${msg}`, data || "");
-        },
-        
-        success: (msg, data = null) => {
-            console.log(`${Logger.prefix} ✅ ${msg}`, data || "");
-            toast(msg, "success");
-        },
-        
-        warn: (msg, data = null) => {
-            console.warn(`${Logger.prefix} ⚠️  ${msg}`, data || "");
-            toast(msg, "warn");
-        },
-        
-        error: (msg, error = null) => {
-            console.error(`${Logger.prefix} ❌ ${msg}`, error || "");
-            toast(msg, "error");
-            stats.total_failed++;
-            saveStats();
-        },
-        
-        debug: (msg, data = null) => {
-            console.debug(`${Logger.prefix} 🔍 ${msg}`, data || "");
-        }
-    };
-
-    // ============================================================
-    // NEON HUD TOAST SYSTEM
+    // NEON HUD: SAFE TOAST SYSTEM
     // ============================================================
     function toast(msg, type = "info", duration = 3500) {
         if (!document.body) {
@@ -97,37 +54,36 @@
         }
 
         const palette = {
-            info:    { c: "#00eaff", i: "ℹ️" },
-            success: { c: "#00ff40", i: "✓" },
-            error:   { c: "#ff003c", i: "✗" },
-            warn:    { c: "#ffcc00", i: "⚠" }
+            info:    { c: "#00eaff" },
+            success: { c: "#00ff40" },
+            error:   { c: "#ff003c" },
+            warn:    { c: "#ffcc00" }
         };
 
-        const style = palette[type] || palette.info;
+        const color = palette[type]?.c || "#00eaff";
+
         const el = document.createElement("div");
-        el.innerHTML = `<span style="margin-right: 8px;">${style.i}</span>${msg}`;
+        el.innerText = `>> ${msg}`;
 
         Object.assign(el.style, {
             position: "fixed",
             bottom: "24px",
             right: "24px",
-            padding: "14px 22px",
-            background: "rgba(5, 5, 5, 0.95)",
-            border: `1px solid ${style.c}`,
-            borderLeft: `4px solid ${style.c}`,
-            color: style.c,
-            fontFamily: "Fira Code, Consolas, monospace",
-            fontSize: "13px",
+            padding: "12px 20px",
+            background: "#050505",
+            border: `1px solid ${color}`,
+            borderLeft: `4px solid ${color}`,
+            color: color,
+            fontFamily: "Fira Code, monospace",
+            fontSize: "12px",
             letterSpacing: "0.5px",
             textTransform: "uppercase",
-            boxShadow: `0 0 16px ${style.c}55, inset 0 0 8px ${style.c}22`,
+            boxShadow: `0 0 12px ${color}55`,
             opacity: "0",
             transform: "translateY(20px)",
             zIndex: 999999,
             pointerEvents: "none",
-            transition: "all .3s cubic-bezier(0.4, 0, 0.2, 1)",
-            backdropFilter: "blur(10px)",
-            borderRadius: "4px"
+            transition: "all .25s ease-out"
         });
 
         document.body.appendChild(el);
@@ -144,245 +100,188 @@
     }
 
     // ============================================================
-    // STATS MANAGEMENT
+    // RETRY ENGINE WITH CORRECT STRUCTURE (CRITICAL FIX)
     // ============================================================
-    function saveStats() {
-        stats.last_sync = new Date().toISOString();
-        GM_setValue(STORAGE_KEYS.STATS, stats);
-    }
-
-    function showStats() {
-        const uptime = Math.floor((new Date() - new Date(stats.uptime_start)) / 1000 / 60);
-        const msg = `
-📊 STATISTICS
-━━━━━━━━━━━━━━━━
-✓ Sent: ${stats.total_sent}
-✗ Failed: ${stats.total_failed}
-⏱️  Uptime: ${uptime}m
-📦 Queue: ${failedQueue.length}
-🔄 Last Sync: ${stats.last_sync ? new Date(stats.last_sync).toLocaleTimeString() : 'Never'}
-        `.trim();
-        
-        alert(msg);
-        Logger.info("Stats displayed", stats);
-    }
-
-    // ============================================================
-    // HEALTH CHECK SYSTEM
-    // ============================================================
-    async function performHealthCheck() {
-        Logger.info("Performing health check...");
-        
-        try {
-            const response = await fetch(CONFIG.WEBHOOK_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    health_check: true,
-                    timestamp: new Date().toISOString()
-                })
-            });
-
-            if (response.ok) {
-                Logger.success("Health check passed");
-                GM_setValue(STORAGE_KEYS.LAST_HEALTH_CHECK, new Date().toISOString());
-                return true;
-            } else {
-                Logger.warn(`Health check failed: ${response.status}`);
-                return false;
-            }
-        } catch (error) {
-            Logger.error("Health check error", error);
-            return false;
-        }
-    }
-
-    // Schedule periodic health checks
-    setInterval(performHealthCheck, CONFIG.HEALTH_CHECK_INTERVAL);
-
-    // ============================================================
-    // ENHANCED RETRY ENGINE
-    // ============================================================
-    function sendToWebhook(data, attempt = 1) {
-        // Check if already sent
-        if (sentIds[data.id]) {
-            Logger.debug(`Skipping already sent: ${data.id}`);
-            return Promise.resolve();
-        }
-
-        // Check queue size
-        if (failedQueue.length >= CONFIG.MAX_QUEUE_SIZE) {
-            Logger.warn("Queue full, clearing old items");
-            failedQueue = failedQueue.slice(-20);
-            GM_setValue(STORAGE_KEYS.FAILED_QUEUE, failedQueue);
-        }
-
-        const isRetry = attempt > 1;
-        const logPrefix = isRetry ? `[Retry ${attempt}/${CONFIG.MAX_RETRIES}]` : "[New]";
-
-        Logger.info(`${logPrefix} Uploading: ${data.title}`);
-
-        return new Promise((resolve, reject) => {
-            GM_xmlhttpRequest({
-                method: "POST",
-                url: CONFIG.WEBHOOK_URL,
-                headers: { "Content-Type": "application/json" },
-                data: JSON.stringify(data),
-                timeout: CONFIG.TIMEOUT,
-
-                onload: (res) => {
-                    if (res.status >= 200 && res.status < 300) {
-                        // Success
-                        sentIds[data.id] = {
-                            timestamp: new Date().toISOString(),
-                            title: data.title
-                        };
-                        GM_setValue(STORAGE_KEYS.SENT_IDS, sentIds);
-
-                        stats.total_sent++;
-                        saveStats();
-
-                        Logger.success(`✓ ${data.title}`);
-
-                        // Remove from failed queue if present
-                        failedQueue = failedQueue.filter(item => item.id !== data.id);
-                        GM_setValue(STORAGE_KEYS.FAILED_QUEUE, failedQueue);
-
-                        resolve(res);
-                    } else {
-                        handleSendError(res.status, data, attempt, reject);
-                    }
-                },
-
-                onerror: () => handleSendError("NETWORK", data, attempt, reject),
-                ontimeout: () => handleSendError("TIMEOUT", data, attempt, reject)
-            });
-        });
-    }
-
-    function handleSendError(code, payload, attempt, reject) {
-        if (attempt < CONFIG.MAX_RETRIES) {
-            const delay = CONFIG.RETRY_DELAY_BASE * Math.pow(2, attempt);
-            Logger.warn(`Error ${code} — Retry in ${delay}ms`);
-            
-            setTimeout(() => {
-                sendToWebhook(payload, attempt + 1)
-                    .then(reject)
-                    .catch(reject);
-            }, delay);
-        } else {
-            // Max retries reached - add to failed queue
-            Logger.error(`Failed permanently: ${payload.title} (${code})`);
-            
-            if (!failedQueue.some(item => item.id === payload.id)) {
-                failedQueue.push({
-                    ...payload,
-                    failed_at: new Date().toISOString(),
-                    error_code: code
-                });
-                GM_setValue(STORAGE_KEYS.FAILED_QUEUE, failedQueue);
-            }
-            
-            // Show desktop notification for permanent failure
-            if (GM_notification) {
-                GM_notification({
-                    title: "Suno Bridge - Upload Failed",
-                    text: `${payload.title} failed after ${CONFIG.MAX_RETRIES} attempts`,
-                    timeout: 5000
-                });
-            }
-            
-            reject(new Error(`Failed after ${CONFIG.MAX_RETRIES} attempts: ${code}`));
-        }
-    }
-
-    // ============================================================
-    // BATCH PROCESSING FOR FAILED QUEUE
-    // ============================================================
-    async function retryFailedQueue() {
-        if (failedQueue.length === 0) {
-            toast("No failed items to retry", "info");
+    function sendToWebhook(clipData, attempt = 1) {
+        if (sentIds[clipData.id]) {
+            log(`Skipping duplicate: ${clipData.id}`, "debug");
             return;
         }
 
-        Logger.info(`Retrying ${failedQueue.length} failed items...`);
-        toast(`Retrying ${failedQueue.length} items...`, "info");
+        // CRITICAL FIX: Send FLAT structure - n8n webhook will wrap it in body
+        // DO NOT wrap in body ourselves to avoid double nesting
+        const payload = {
+            id: clipData.id,
+            title: clipData.title,
+            audio_url: clipData.audio_url,
+            image_url: clipData.image_url,
+            video_url: clipData.video_url,
+            prompt: clipData.prompt,
+            tags: clipData.tags,
+            model: clipData.model,
+            duration: clipData.duration,
+            created_at: clipData.created_at,
+            source: clipData.source
+        };
 
-        const itemsToRetry = [...failedQueue];
-        let successCount = 0;
+        const retry = attempt > 1;
+        const logPrefix = retry ? `[Retry ${attempt}/${MAX_RETRIES}]` : `[New]`;
 
-        for (const item of itemsToRetry) {
-            try {
-                await sendToWebhook(item, 1);
-                successCount++;
-                
-                // Add delay between batch sends
-                await new Promise(resolve => setTimeout(resolve, CONFIG.BATCH_DELAY));
-            } catch (error) {
-                Logger.error(`Batch retry failed for: ${item.title}`, error);
-            }
+        log(`${logPrefix} Sending: ${clipData.title} (${clipData.id})`, retry ? "warn" : "info");
+
+        if (DEBUG_MODE) {
+            console.log("Full payload (flat structure):", JSON.stringify(payload, null, 2));
         }
 
-        toast(`Batch complete: ${successCount}/${itemsToRetry.length} succeeded`, 
-              successCount === itemsToRetry.length ? "success" : "warn");
+        if (!retry) toast(`Uploading: ${clipData.title}`, "info");
+
+        GM_xmlhttpRequest({
+            method: "POST",
+            url: WEBHOOK_URL,
+            headers: { "Content-Type": "application/json" },
+            data: JSON.stringify(payload),
+            timeout: 15000,
+
+            onload: (res) => {
+                log(`Response status: ${res.status}`, "debug");
+
+                if (res.status >= 200 && res.status < 300) {
+                    sentIds[clipData.id] = {
+                        title: clipData.title,
+                        sentAt: new Date().toISOString()
+                    };
+                    GM_setValue(SENT_IDS_KEY, sentIds);
+
+                    log(`✓ Success: ${clipData.title}`, "success");
+                    toast(`Pipeline Success: ${clipData.title}`, "success");
+                } else {
+                    log(`✗ HTTP ${res.status}: ${res.responseText}`, "error");
+                    handleSendError(res.status, clipData, attempt);
+                }
+            },
+
+            onerror: (err) => {
+                log(`✗ Network Error: ${err.error || "Unknown"}`, "error");
+                handleSendError("NETWORK", clipData, attempt);
+            },
+
+            ontimeout: () => {
+                log(`✗ Timeout after 15s`, "error");
+                handleSendError("TIMEOUT", clipData, attempt);
+            }
+        });
+    }
+
+    function handleSendError(code, clipData, attempt) {
+        if (attempt < MAX_RETRIES) {
+            const wait = 1000 * Math.pow(2, attempt);
+            log(`Error ${code} — Retrying in ${wait}ms`, "warn");
+            setTimeout(() => sendToWebhook(clipData, attempt + 1), wait);
+        } else {
+            log(`✗ FAILED after ${MAX_RETRIES} attempts: ${clipData.title}`, "error");
+            toast(`Failed: ${clipData.title} (${code})`, "error", 5000);
+        }
     }
 
     // ============================================================
-    // UNIVERSAL CLIP PARSER
+    // ENHANCED CLIP VALIDATOR
+    // ============================================================
+    function isValidClip(clip) {
+        if (!clip || typeof clip !== "object") {
+            return false;
+        }
+
+        const hasRequiredFields =
+              clip.id &&
+              clip.audio_url &&
+              clip.status === "complete" &&
+              !clip.is_trashed;
+
+        if (!hasRequiredFields) {
+            log(`Invalid clip: Missing required fields or not complete`, "debug");
+            return false;
+        }
+
+        if (sentIds[clip.id]) {
+            log(`Skipping: Already sent ${clip.id}`, "debug");
+            return false;
+        }
+
+        return true;
+    }
+
+    // ============================================================
+    // UNIVERSAL CLIP PARSER (ENHANCED)
     // ============================================================
     function parseClips(source) {
         if (!source) return [];
+
         if (Array.isArray(source)) return source;
-        if (source.clips) return source.clips;
-        if (source.result) return source.result;
-        if (source.project?.clips) return source.project.clips;
+
+        const paths = [
+            source.clips,
+            source.result,
+            source.data?.clips,
+            source.data,
+            source.project?.clips,
+            source.response?.clips
+        ];
+
+        for (const path of paths) {
+            if (Array.isArray(path)) return path;
+        }
+
+        if (source.id && source.audio_url) return [source];
+
         return [];
     }
 
     // ============================================================
-    // CLIP HANDLER WITH VALIDATION
+    // CLIP HANDLER WITH ENHANCED LOGGING
     // ============================================================
     function handleClips(rawClips) {
-        const clips = Array.isArray(rawClips) ? rawClips : [];
-        let processedCount = 0;
+        const clips = parseClips(rawClips);
+
+        if (clips.length === 0) {
+            log("No clips found in response", "debug");
+            return;
+        }
+
+        log(`Processing ${clips.length} clip(s)`, "info");
+
+        let sentCount = 0;
+        let skippedCount = 0;
 
         clips.forEach(clip => {
-            if (!clip) return;
+            if (!isValidClip(clip)) {
+                skippedCount++;
+                return;
+            }
 
-            // Comprehensive validation
-            const isValid = 
-                clip.id &&
-                clip.status === "complete" &&
-                !clip.is_trashed &&
-                clip.audio_url &&
-                !sentIds[clip.id];
-
-            if (!isValid) return;
-
-            const payload = {
-                id: clip.id,                                // Critical: Becomes video_id
-                title: clip.title || `Suno Track ${clip.id}`,
-                tags: clip.metadata?.tags || "Electronic",  // Critical: Guides the Llama Director
-                audio_url: clip.audio_url,                  // Critical: Source audio
-                duration: clip.metadata?.duration || 120,
-                status: clip.status
-                // Note: We intentionally OMIT image_url because Flux generates new art
+            const clipData = {
+                id: clip.id,
+                title: clip.title || clip.display_name || "Untitled_Track",
+                audio_url: clip.audio_url,
+                image_url: clip.image_url || clip.image_large_url || "",
+                video_url: clip.video_url || "",
+                prompt: clip.metadata?.prompt || clip.gpt_description_prompt || "",
+                tags: clip.metadata?.tags || clip.metadata?.gpt_description_prompt || "",
+                model: clip.major_model_version || clip.model_name || "unknown",
+                duration: clip.metadata?.duration || clip.duration || 0,
+                created_at: clip.created_at || new Date().toISOString(),
+                source: "suno_god_mode_v7_1"
             };
 
-            sendToWebhook(payload).catch(err => {
-                Logger.error(`Send failed for ${payload.title}`, err);
-            });
-
-            processedCount++;
+            log(`→ Queueing: ${clipData.title}`, "info");
+            sendToWebhook(clipData);
+            sentCount++;
         });
 
-        if (processedCount > 0) {
-            Logger.info(`Processed ${processedCount} new clips`);
-        }
+        log(`Batch complete: ${sentCount} sent, ${skippedCount} skipped`, "success");
     }
 
     // ============================================================
-    // HARDENED FETCH INTERCEPTOR
+    // FETCH INTERCEPTOR (HARDENED + ENHANCED)
     // ============================================================
     const originalFetch = unsafeWindow.fetch;
 
@@ -393,201 +292,123 @@
         else if (args[0]?.url) url = args[0].url;
         else if (args[0]?.toString) url = args[0].toString();
 
-        // Silent tracker blackhole
-        const blocked = ["stratovibe", "sentry", "segment", "agentio", "analytics"];
+        const blocked = ["stratovibe", "sentry", "segment", "agentio", "mixpanel", "amplitude"];
         if (blocked.some(b => url.includes(b))) {
+            log(`Blocked tracker: ${url}`, "debug");
             return new Response(
-                JSON.stringify({ status: "blocked_by_god_mode", blocked: true }),
+                JSON.stringify({ status: "blocked_by_god_mode" }),
                 { status: 200, headers: { "Content-Type": "application/json" } }
             );
         }
 
         const response = await originalFetch(...args);
-        
-        // Only process Suno API calls
-        if (url.includes("suno.com/api") || url.includes("clerk.suno.com")) {
-            const clone = response.clone();
 
-            clone.json().then(data => {
-                const clips = parseClips(data);
-                if (clips.length) {
-                    handleClips(clips);
-                }
-            }).catch(() => {
-                // Silent fail for non-JSON responses
-            });
+        if (!url.includes("suno.com/api") && !url.includes("cdn.suno")) {
+            return response;
         }
+
+        log(`Intercepted: ${url}`, "debug");
+        const clone = response.clone();
+
+        clone.json().then(data => {
+            const clips = parseClips(data);
+            if (clips.length) {
+                log(`Found ${clips.length} clips in API response`, "info");
+                handleClips(clips);
+            }
+        }).catch(err => {
+            log(`Parse error: ${err.message}`, "debug");
+        });
 
         return response;
-     };
+    };
 
     // ============================================================
-    // 🎛️ COMPLIANT MANUAL CONTROL HUD (Fixes "Missing ID/Name" Audit)
+    // DOM OBSERVER FOR DYNAMICALLY LOADED CONTENT
     // ============================================================
-    function toggleControlPanel() {
-        const PANEL_ID = "suno_god_mode_panel";
-        const existing = document.getElementById(PANEL_ID);
-        
-        if (existing) {
-            existing.remove();
-            return;
+    function observeDOMForClips() {
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach(mutation => {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === 1) {
+                        const fiber = node._reactFiber || node._reactInternalFiber;
+                        if (fiber?.memoizedProps?.clip) {
+                            handleClips([fiber.memoizedProps.clip]);
+                        }
+                    }
+                });
+            });
+        });
+
+        if (document.body) {
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+            log("DOM observer active", "debug");
+        } else {
+            document.addEventListener("DOMContentLoaded", () => {
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+                log("DOM observer active", "debug");
+            });
         }
-
-        const panel = document.createElement("div");
-        panel.id = PANEL_ID;
-        Object.assign(panel.style, {
-            position: "fixed",
-            bottom: "80px",
-            right: "24px",
-            width: "300px",
-            background: "#0a0a0a",
-            border: "1px solid #333",
-            borderRadius: "8px",
-            padding: "16px",
-            zIndex: 999990,
-            boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
-            fontFamily: "Inter, sans-serif"
-        });
-
-        // HEADER
-        const header = document.createElement("h3");
-        header.innerText = "⚡ Manual Trigger";
-        header.style.color = "#fff";
-        header.style.margin = "0 0 12px 0";
-        header.style.fontSize = "14px";
-        panel.appendChild(header);
-
-        // FORM CONTAINER
-        const form = document.createElement("div");
-        
-        // INPUT: Song ID (COMPLIANT)
-        const inputGroup = document.createElement("div");
-        inputGroup.style.marginBottom = "10px";
-        
-        const label = document.createElement("label");
-        label.innerText = "Song UUID";
-        label.htmlFor = "suno_manual_id"; // Links to ID
-        label.style.display = "block";
-        label.style.color = "#888";
-        label.style.fontSize = "11px";
-        label.style.marginBottom = "4px";
-
-        const input = document.createElement("input");
-        input.type = "text";
-        input.id = "suno_manual_id";       // ✅ FIXED: Unique ID
-        input.name = "suno_manual_id";     // ✅ FIXED: Unique Name
-        input.placeholder = "e.g., a1b2c3d4-..."
-        Object.assign(input.style, {
-            width: "100%",
-            background: "#1a1a1a",
-            border: "1px solid #333",
-            color: "#fff",
-            padding: "8px",
-            borderRadius: "4px",
-            boxSizing: "border-box"
-        });
-
-        inputGroup.appendChild(label);
-        inputGroup.appendChild(input);
-        form.appendChild(inputGroup);
-
-        // ACTION BUTTON
-        const btn = document.createElement("button");
-        btn.id = "suno_trigger_btn";       // ✅ FIXED
-        btn.name = "suno_trigger_btn";     // ✅ FIXED
-        btn.innerText = "PUSH TO PIPELINE";
-        Object.assign(btn.style, {
-            width: "100%",
-            background: "#fff",
-            color: "#000",
-            border: "none",
-            padding: "8px",
-            borderRadius: "4px",
-            fontWeight: "bold",
-            cursor: "pointer",
-            marginTop: "8px"
-        });
-
-        // LOGIC
-        btn.onclick = () => {
-            const id = document.getElementById("suno_manual_id").value.trim();
-            if (!id) {
-                toast("Enter a Song ID", "warn");
-                return;
-            }
-            // Mock a clip object for the handler
-            handleClips([{
-                id: id,
-                title: "Manual Override",
-                audio_url: `https://cdn1.suno.ai/${id}.mp3`,
-                image_url: `https://cdn1.suno.ai/image_${id}.png`,
-                status: "complete",
-                metadata: { tags: "manual_trigger" }
-            }]);
-            toast(`Manually Pushed: ${id.slice(0,8)}...`, "success");
-        };
-
-        form.appendChild(btn);
-        panel.appendChild(form);
-        document.body.appendChild(panel);
     }
 
     // ============================================================
     // MENU COMMANDS
     // ============================================================
     GM_registerMenuCommand("⚡ Force Rescan Feed", () => {
-        toast("Rescanning Suno feed...", "info");
-        fetch("https://suno.com/api/feed?page=1").catch(() => {});
+        toast("Rescanning feed...", "warn");
+        log("Manual rescan triggered", "info");
+        fetch("https://suno.com/api/feed?page=1")
+            .then(() => log("Rescan complete", "success"))
+            .catch(err => log(`Rescan error: ${err}`, "error"));
     });
 
-    GM_registerMenuCommand("🔄 Retry Failed Queue", retryFailedQueue);
-
     GM_registerMenuCommand("🧹 Clear Sent Cache", () => {
-        if (confirm("⚠️  Clear sent history? ALL songs will be re-sent on next detection.")) {
-            GM_setValue(STORAGE_KEYS.SENT_IDS, {});
+        if (confirm("Clear history? ALL songs will resend.")) {
+            GM_setValue(SENT_IDS_KEY, {});
             sentIds = {};
-            toast("Cache cleared - fresh start", "success");
+            toast("Cache Cleared", "success");
+            log("Sent cache cleared", "info");
         }
     });
 
-    GM_registerMenuCommand("📊 Show Statistics", showStats);
+    GM_registerMenuCommand("📊 Show Statistics", () => {
+        const count = Object.keys(sentIds).length;
+        const recent = Object.entries(sentIds)
+        .slice(-5)
+        .map(([id, data]) => `${data.title} (${data.sentAt})`)
+        .join("\n");
 
-    GM_registerMenuCommand("🏥 Health Check", () => {
-        performHealthCheck().then(healthy => {
-            if (!healthy) {
-                toast("Health check failed - check console", "error");
-            }
-        });
+        alert(`Total Sent: ${count}\n\nRecent:\n${recent || "None"}`);
     });
 
-    GM_registerMenuCommand("💾 Export Failed Queue", () => {
-        const dataStr = JSON.stringify(failedQueue, null, 2);
-        const dataBlob = new Blob([dataStr], { type: "application/json" });
-        const url = URL.createObjectURL(dataBlob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `suno_failed_queue_${Date.now()}.json`;
-        link.click();
-        URL.revokeObjectURL(url);
-        toast("Failed queue exported", "success");
+    GM_registerMenuCommand("🐛 Toggle Debug Mode", () => {
+        const newMode = !DEBUG_MODE;
+        window.SUNO_DEBUG = newMode;
+        toast(`Debug: ${newMode ? "ON" : "OFF"}`, "info");
     });
-
-    GM_registerMenuCommand("🎛️ Toggle Control Panel", toggleControlPanel);
 
     // ============================================================
     // INITIALIZATION
     // ============================================================
-    Logger.success("GOD MODE v7.0 Active");
-    Logger.info("Configuration:", CONFIG);
-    Logger.info("Stats:", stats);
-    
-    if (failedQueue.length > 0) {
-        Logger.warn(`${failedQueue.length} items in failed queue`);
-    }
+    log("=".repeat(60), "info");
+    log("GOD MODE v7.1 ACTIVE (Fixed Double Nesting)", "success");
+    log(`Webhook: ${WEBHOOK_URL}`, "info");
+    log(`Cached IDs: ${Object.keys(sentIds).length}`, "info");
+    log(`Debug Mode: ${DEBUG_MODE ? "ON" : "OFF"}`, "info");
+    log("=".repeat(60), "info");
 
-    // Perform initial health check
-    setTimeout(performHealthCheck, 2000);
+    toast("System Online v7.1", "success", 2500);
 
-    // Display startup notification
-    toast("Suno Bridge v7.0 Online", "success", 2500);
+    observeDOMForClips();
+
+    setInterval(() => {
+        log(`Health check: ${Object.keys(sentIds).length} clips sent`, "debug");
+    }, 30000);
+
 })();

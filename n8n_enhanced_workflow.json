@@ -1,5 +1,5 @@
 {
-  "name": "Suno v3.1 - Cinema Pipeline",
+  "name": "Suno v3.3 - Cinema Pipeline",
   "nodes": [
     {
       "parameters": {
@@ -60,7 +60,7 @@
         "authentication": "serviceAccount",
         "operation": "upload",
         "fileContent": "video_file",
-        "name": "={{ $json.body.title }}_v3.mp4",
+        "name": "={{ $json.body.title }}_v3.3.mp4",
         "parents": [
           "YOUR_GOOGLE_DRIVE_FOLDER_ID"
         ],
