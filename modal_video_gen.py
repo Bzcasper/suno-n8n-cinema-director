@@ -1,19 +1,20 @@
 """
-Suno Video Factory v3.2 - "The Cinema Director" (Hotfix)
-Architecture: A100-80GB Single-Container | Flux.1 [dev] | CogVideoX-5B | Llama 3.1
-Integration: FastAPI Webhook for n8n
+Suno Video Factory v3.3 - "The Stabilizer"
+Architecture: A100-80GB | Flux.1 [dev] | CogVideoX-5B | Llama 3.1
+Fixes: CUDA 12.1 Compatibility, Modal Lifecycle Compliance
 """
 
-import modal
-import os
 import json
+import os
+
+import modal
 import requests
-from fastapi import Response  # <--- FIXED: Import Response from FastAPI
+from fastapi import Response
 
 # ==============================================================================
 # 📦 CONFIGURATION & VOLUMES
 # ==============================================================================
-app = modal.App("suno-video-factory-v3-2")
+app = modal.App("suno-video-factory-v3-3")
 
 # Shared volumes for model caching
 model_volume = modal.Volume.from_name("suno-model-cache", create_if_missing=True)
@@ -39,8 +40,13 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("ffmpeg", "git")
     .pip_install(
-        "fastapi[standard]",
         "torch==2.4.0",
+        "torchvision==0.19.0",
+        "torchaudio==2.4.0",
+        extra_options="--index-url https://download.pytorch.org/whl/cu121",
+    )
+    .pip_install(
+        "fastapi[standard]",
         "diffusers==0.30.0",
         "transformers==4.44.0",
         "accelerate==0.33.0",
@@ -49,7 +55,7 @@ image = (
         "bitsandbytes",
         "whisperx==3.1.1",
         "opencv-python-headless",
-        "numpy<2.0.0",
+        "numpy",
     )
 )
 
@@ -58,24 +64,31 @@ image = (
     image=image,
     gpu="A100-80GB",
     timeout=3600,
+    max_containers=1,  # Enforce sequential execution
     volumes={"/root/models": model_volume, "/tmp/assets": asset_volume},
     secrets=[modal.Secret.from_name("suno-video-secrets")],
 )
 class VideoFactory:
+    # REMOVED __init__ to fix DeprecationError
+
+    @modal.enter()
     def enter(self):
         """Zero-Latency Bootstrap: Load all 3 models into VRAM"""
-        self.device = "cuda"  # Set device here
         print("[BOOT] Initializing Factory...")
+
+        # 1. Set Device inside lifecycle method (Fixes AttributeError)
+        self.device = "cuda"
+
         import torch
-        from diffusers.pipelines.flux.pipeline_flux import FluxPipeline
         from diffusers.pipelines.cogvideo.pipeline_cogvideox_image2video import (
             CogVideoXImageToVideoPipeline,
         )
-        from transformers import AutoTokenizer, AutoModelForCausalLM
+        from diffusers.pipelines.flux.pipeline_flux import FluxPipeline
+        from transformers import AutoModelForCausalLM, AutoTokenizer
 
         torch.backends.cuda.matmul.allow_tf32 = True
 
-        # 1. Load Director (Llama 3.1 8B)
+        # 2. Load Director (Llama 3.1 8B)
         print("[BOOT] Loading Director (Llama 3.1)...")
         self.tokenizer = AutoTokenizer.from_pretrained(
             "meta-llama/Meta-Llama-3.1-8B-Instruct",
@@ -90,7 +103,7 @@ class VideoFactory:
             cache_dir="/root/models",
         )
 
-        # 2. Load Artist (Flux.1 Dev)
+        # 3. Load Artist (Flux.1 Dev)
         print("[BOOT] Loading Artist (Flux.1 [dev])...")
         self.artist = FluxPipeline.from_pretrained(
             "black-forest-labs/FLUX.1-dev",
@@ -100,7 +113,7 @@ class VideoFactory:
         ).to(self.device)
         self.artist.enable_model_cpu_offload()
 
-        # 3. Load Animator (CogVideoX-5B)
+        # 4. Load Animator (CogVideoX-5B)
         print("[BOOT] Loading Animator (CogVideoX-5B)...")
         self.animator = CogVideoXImageToVideoPipeline.from_pretrained(
             "THUDM/CogVideoX-5b-I2V",
@@ -112,12 +125,14 @@ class VideoFactory:
         print("[BOOT] Factory Ready.")
 
     def analyze_audio(self, audio_path):
-        """Extracts word-level timestamps"""
-        import whisperx
         import torch
+        import whisperx
 
         print(f"[EARS] Transcribing {audio_path}...")
-        # device is now guaranteed to exist
+        # Ensure device is set (redundant check)
+        if not hasattr(self, "device"):
+            self.device = "cuda"
+
         model = whisperx.load_model("large-v2", self.device, compute_type="float16")
         audio = whisperx.load_audio(audio_path)
         result = model.transcribe(audio, batch_size=16)
@@ -127,7 +142,6 @@ class VideoFactory:
         return result["segments"]
 
     def generate_storyboard(self, segments, title, tags):
-        """Generates the cinematic script using Llama 3.1"""
         lyrics_text = "\n".join(
             [f"[{s['start']:.2f}-{s['end']:.2f}] {s['text']}" for s in segments]
         )
@@ -172,10 +186,9 @@ class VideoFactory:
 
     @modal.method()
     def create_music_video(self, audio_url: str, title: str, tags: str, video_id: str):
-        from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
         from diffusers.utils.export_utils import export_to_video
+        from moviepy.editor import AudioFileClip, VideoFileClip, concatenate_videoclips
 
-        # 1. Download
         print(f"[START] Processing: {title}")
         os.makedirs("/tmp/assets", exist_ok=True)
         audio_path = f"/tmp/assets/{video_id}.mp3"
@@ -184,16 +197,12 @@ class VideoFactory:
             with open(audio_path, "wb") as f:
                 f.write(requests.get(audio_url).content)
 
-        # 2. Analyze
         segments = self.analyze_audio(audio_path)
-
-        # 3. Storyboard
         print("[MIND] Director is writing the script...")
         storyboard = self.generate_storyboard(segments, title, tags)
 
         clips = []
 
-        # 4. Generate
         for i, scene in enumerate(storyboard):
             duration = scene.get("end", 0) - scene.get("start", 0)
             if duration < 2:
@@ -201,7 +210,6 @@ class VideoFactory:
 
             print(f"[SCENE {i + 1}] {scene.get('visual_prompt', '')[:50]}...")
 
-            # A. Flux
             image = self.artist(
                 prompt=scene.get("visual_prompt", title),
                 height=768,
@@ -210,7 +218,6 @@ class VideoFactory:
                 guidance_scale=3.5,
             ).images[0]
 
-            # B. CogVideoX
             frames = self.animator(
                 prompt=scene.get("motion_prompt", "Slow pan"),
                 image=image,
@@ -219,11 +226,9 @@ class VideoFactory:
                 guidance_scale=6.0,
             ).frames[0]
 
-            # C. Export
             scene_path = f"/tmp/assets/{video_id}_scene_{i}.mp4"
             export_to_video(frames, scene_path, fps=8)
 
-            # D. Loop
             clip = VideoFileClip(scene_path)
             if clip.duration < duration:
                 clip = clip.loop(duration=duration)
@@ -231,7 +236,6 @@ class VideoFactory:
                 clip = clip.subclip(0, duration)
             clips.append(clip)
 
-        # 5. Final Stitch
         if not clips:
             raise ValueError("No clips generated")
 
@@ -263,24 +267,15 @@ class VideoFactory:
 )
 @modal.fastapi_endpoint(method="POST")
 def n8n_webhook(data: dict):
-    """
-    HTTP Entrypoint for n8n.
-    Receives JSON -> Triggers A100 Job -> Returns MP4 File
-    """
     print(f"[WEBHOOK] Received request for: {data.get('title', 'Unknown')}")
-
     factory = VideoFactory()
-
     try:
-        # Trigger the remote GPU job
         video_bytes = factory.create_music_video.remote(
             audio_url=data["audio_url"],
             title=data.get("title", "Unknown Song"),
             tags=data.get("tags", "Music"),
             video_id=data.get("video_id", "suno_video"),
         )
-
-        # Return video file directly
         return Response(
             content=video_bytes,
             media_type="video/mp4",

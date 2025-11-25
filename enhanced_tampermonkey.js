@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Suno-to-Modal Cinema Director (v3.1)
+// @name         Suno-to-n8n Bridge (Production v7.2 - Sequential Flow)
 // @namespace    http://tampermonkey.net/
-// @version      9.0
+// @version      7.2
 // @description  Production-ready: Enhanced logging, batch processing, health checks, and comprehensive error recovery
 // @author       Robert Casper
 // @match        https://suno.com/*
@@ -18,15 +18,21 @@
     "use strict";
 
     // ============================================================
-    // PRODUCTION CONFIGURATION
+    // PRODUCTION CONFIGURATION (v7.2 Sequential Flow)
     // ============================================================
     const CONFIG = {
+        // MUST BE YOUR N8N WEBHOOK URL
         WEBHOOK_URL: "https://n8n-gszggfatjq-uc.a.run.app/webhook/suno-trigger",
         MAX_RETRIES: 3,
         RETRY_DELAY_BASE: 1000,
         TIMEOUT: 15000,
-        BATCH_DELAY: 2000, // Delay between batch sends
-        HEALTH_CHECK_INTERVAL: 300000, // 5 minutes
+
+        // REVERTED: n8n handles the sequential pacing based on completion time.
+        BATCH_DELAY: 2000,
+
+        // Health check interval reverted to default (5 minutes)
+        HEALTH_CHECK_INTERVAL: 300000,
+
         MAX_QUEUE_SIZE: 50
     };
 
