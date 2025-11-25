@@ -2,7 +2,7 @@
 I've created a production-ready, enterprise-grade pipeline that transforms your Suno songs into high-quality music videos and organizes them perfectly for YouTube. Here's what you received:
 🎯 Core Components
 
-Modal Labs Video Generator (modal_video_generator.py)
+Modal Labs Video Generator (modal_video_gen.py)
 
 High-quality 1080p video generation
 Smooth looping effects with multiple visual variations
@@ -11,7 +11,7 @@ YouTube-optimized encoding (8000k video, 320k audio)
 Error handling and retry logic
 
 
-Enhanced n8n Workflow (n8n_production_workflow.json)
+Enhanced n8n Workflow (n8n_enhanced_workflow.json)
 
 Webhook receiver for Tampermonkey
 Parallel download of audio + cover art
@@ -21,7 +21,7 @@ Comprehensive error handling with fallback paths
 Automatic metadata generation for YouTube
 
 
-Production Tampermonkey Script (enhanced_suno_bridge.user.js)
+Production Tampermonkey Script (enhanced_tampermonkey.js)
 
 Real-time Suno API interception
 Intelligent retry engine with exponential backoff
@@ -66,7 +66,7 @@ Deploy Modal Labs (5 min)
 
 bash   pip install modal
    modal setup
-   modal deploy modal_video_generator.py
+   modal deploy modal_video_gen.py
 
 Setup Google Drive (10 min)
 

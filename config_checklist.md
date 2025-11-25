@@ -22,9 +22,9 @@
 ### Phase 3: Modal Labs Setup
 - [ ] Modal CLI installed: `pip install modal`
 - [ ] Modal authenticated: `modal setup`
-- [ ] `modal_video_generator.py` saved locally
+- [ ] `modal_video_gen.py` saved locally
 - [ ] Secrets created (if needed): `modal secret create suno-video-secrets`
-- [ ] Script deployed: `modal deploy modal_video_generator.py`
+- [ ] Script deployed: `modal deploy modal_video_gen.py`
 - [ ] Endpoint URL copied
 
 **Modal Endpoint**: `___________________________`
@@ -102,7 +102,7 @@ MAX_QUEUE_SIZE: 50               // Max items in failed queue
 ### Modal Configuration
 
 ```python
-# File: modal_video_generator.py
+# File: modal_video_gen.py
 
 # Video quality settings (lines ~100-110)
 target_size = (1920, 1080)        # Video resolution

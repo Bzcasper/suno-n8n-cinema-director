@@ -45,9 +45,9 @@ modal secret create suno-video-secrets \
 ### 1.3 Deploy Video Generator
 
 ```bash
-# Save the modal_video_generator.py file
+# Save the modal_video_gen.py file
 # Then deploy to Modal
-modal deploy modal_video_generator.py
+modal deploy modal_video_gen.py
 
 # Note the endpoint URL - you'll need this for n8n
 # Example: https://your-username--suno-video-generator-generate-music-video.modal.run
@@ -57,7 +57,7 @@ modal deploy modal_video_generator.py
 
 ```bash
 # Run a test locally
-modal run modal_video_generator.py
+modal run modal_video_gen.py
 
 # Check the logs
 modal app logs suno-video-generator
@@ -371,7 +371,7 @@ cutoff_date = datetime.now() - timedelta(days=90)
 
 ### 9.1 Customize Video Generation
 
-**Change video style in `modal_video_generator.py`:**
+**Change video style in `modal_video_gen.py`:**
 
 ```python
 # Add custom effects

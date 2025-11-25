@@ -5,11 +5,11 @@
 ### Modal Labs Deployment
 - **Deploy to production**: `modal deploy modal_video_gen.py`
 - **Local testing**: `modal run modal_video_gen.py`
-- **Check logs**: `modal app logs suno-video-factory-v3-1`
+- **Check logs**: `modal app logs suno-video-factory-v3-5-1`
 - **Setup Modal**: `modal setup`
 
 ### Health Checks
-- **Test webhook**: `curl -X POST https://trap--suno-video-factory-v3-3-n8n-webhook.modal.run -H "Content-Type: application/json" -d '{"audio_url": "test", "title": "test", "tags": "test", "video_id": "test"}'`
+- **Test webhook**: `curl -X POST https://bzcasper--suno-video-factory-v3-5-1-n8n-webhook.modal.run -H "Content-Type: application/json" -d '{"audio_url": "test", "title": "test", "tags": "test", "id": "test"}'`
 
 ### Single Test Execution
 - **Test video generation**: `modal run modal_video_gen.py` (uses test URLs in main function)
