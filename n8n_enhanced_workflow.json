@@ -15,7 +15,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://trap--suno-video-factory-v3-2-n8n-webhook.modal.run",
+        "url": "https://trap--suno-video-factory-v3-3-n8n-webhook.modal.run",
         "authentication": "none",
         "sendBody": true,
         "contentType": "json",
